@@ -1,24 +1,29 @@
-import sys, py7zr, os, json, tempfile, subprocess
+import sys, py7zr, os, json, tempfile, subprocess, argparse, sys, winreg
 from PyQt5.QtWidgets import QApplication, QMainWindow, QPushButton, QFileDialog, QLabel, QVBoxLayout, QWidget, QMessageBox, QProgressBar
 from PyQt5.QtCore import Qt
 
-def installNMI(file):
+def installNMI(file, minimal=False):
+    print("Parsing...")
+
     name = os.path.basename(file)
     name = name.replace('.nmi', '')
     print(f'File = {file}')
 
     appname = os.path.basename(file)
     appname = appname.replace('.nmi', '')
-    print(f'Appname = {appname}')
+    print(f'NMI Name = {appname}')
     
-    window.bar.setValue(20)
+    if not minimal:
+        window.bar.setValue(20)
     
+    # NOTICE. The password for NMI files are stored in plain text.
     with py7zr.SevenZipFile(f"{file}", 'r', password=r"m1FC%0%0", header_encryption=True) as archive:
         archive.extractall(path=f"{os.getenv('LOCALAPPDATA')}\\")
     
     print("Extraction has finished.")
     
-    window.bar.setValue(80)
+    if not minimal:
+        window.bar.setValue(80)
     
     with open(f"{os.getenv('LOCALAPPDATA')}\\{appname}\\nmi.iinfo", 'r') as file:
         data = json.load(file)
@@ -35,11 +40,12 @@ def installNMI(file):
 
     os.system(f"copy \"{shortcut_src}\" \"{shortcut_dest}\"")
 
-    window.tutorial.setText("Tutorial: Installed successfully!")
+    if not minimal:
+        window.tutorial.setText("Tutorial: Installed successfully!")
 
-    window.bar.setValue(100)
+        window.bar.setValue(100)
 
-    informer(text=f"Installation of '{appname}' has finished.", title="NMI")
+        informer(text=f"Installation of '{appname}' has finished.", title="NMI")
 
 def shortcut_linker(name: str, targetpath: str):
     SCRIPT_TEMPLATE = """
@@ -121,15 +127,88 @@ class FileInstallerApp(QMainWindow):
 
     def install_file(self):
         if self.selected_file_path:
-            # Add your installation logic here
-            #print(f"Installing file: {self.selected_file_path}")
-            # For demonstration purposes, just printing the selected file path
             self.install_button.setEnabled(False)
             window.tutorial.setText("Tutorial: Installing...")
             installNMI(self.selected_file_path)
 
+def searchPath(query):
+    path_env = os.getenv('PATH')
+
+    paths = path_env.split(os.pathsep)
+
+    found_paths = []
+    for path in paths:
+        if query in path:
+            found_paths.append(path)
+
+    return found_paths
+
+def add_to_user_path(new_path):
+    try:
+        user_env_key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, 'Environment', 0, winreg.KEY_ALL_ACCESS)
+        
+        current_path, _ = winreg.QueryValueEx(user_env_key, 'PATH')
+        
+        if new_path not in current_path:
+            new_path = new_path.rstrip(os.pathsep)
+            new_path = current_path + os.pathsep + new_path
+            
+            winreg.SetValueEx(user_env_key, 'PATH', 0, winreg.REG_EXPAND_SZ, new_path)
+
+        winreg.CloseKey(user_env_key)
+    except Exception as e:
+        print("Error:", e)
+
+def set_file_association():
+    executable_path = "nmi"
+
+    script_path = os.path.abspath(sys.argv[0])
+
+    command = f'"{executable_path}" --file "%1"'
+
+    try:
+        key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, 'Software\Classes', 0, winreg.KEY_WRITE)
+
+        winreg.SetValueEx(key, '.nmi', 0, winreg.REG_SZ, 'NMIFile')
+
+        key_nmi = winreg.CreateKey(key, 'NMIFile')
+        winreg.SetValueEx(key_nmi, '', 0, winreg.REG_SZ, 'NMI File')
+        
+        key_shell = winreg.CreateKey(key_nmi, 'shell')
+
+        key_open = winreg.CreateKey(key_shell, 'open')
+
+        winreg.SetValueEx(key_open, '', 0, winreg.REG_SZ, None)
+
+        key_command = winreg.CreateKey(key_open, 'command')
+        winreg.SetValueEx(key_command, '', 0, winreg.REG_SZ, command)
+
+        winreg.CloseKey(key)
+        print("File association set successfully.")
+
+    except Exception as e:
+        print("Error occurred while setting file association:", e)
 
 if __name__ == "__main__":
+
+    print(sys.executable)
+
+    # Add NMI to path.
+    query = sys.executable
+    result = searchPath(query)
+    if result:
+        for path in result:
+            if path != query:
+                print("NOTICE: Adding NMI to your user Path variable. If you have moved NMI many times your path variable could be filled with many directorys. This is for file associations to work.")
+                add_to_user_path(os.getcwd())
+                set_file_association()
+
+    parser = argparse.ArgumentParser(description="Install NMI file")
+    parser.add_argument("--file", help="NMI file to install", required=False)
+    args = parser.parse_args()
+    if args.file:
+        installNMI(args.file, True)
+        exit()
     try:
         app = QApplication(sys.argv)
         window = FileInstallerApp()

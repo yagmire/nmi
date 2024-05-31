@@ -1,6 +1,7 @@
-import sys, py7zr, os, json, tempfile, subprocess, argparse, sys, winreg
+import sys, py7zr, os, json, tempfile, subprocess, argparse
 from PyQt5.QtWidgets import QApplication, QMainWindow, QPushButton, QFileDialog, QLabel, QVBoxLayout, QWidget, QMessageBox, QProgressBar
 from PyQt5.QtCore import Qt
+from sys import exit
 
 def installNMI(file, minimal=False):
     print("Parsing...")
